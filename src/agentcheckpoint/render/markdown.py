@@ -179,6 +179,9 @@ def handoff_document(manifest: dict, report: dict | None = None, target: str = "
             for row in report["files"]:
                 if row["verdict"] in ("changed", "missing"):
                     add(f"  - {row['verdict']}: {row['path']}")
+            new_changes = report.get("new_changes") or {}
+            if new_changes.get("count"):
+                add(f"  - {new_changes['count']} new uncommitted change(s) since checkpoint")
         else:
             add("No repository drift detected.")
     add("")
@@ -353,7 +356,7 @@ def verify_document(report: dict) -> str:
     if report["new_changes"]["count"]:
         add(
             f"{UNKNOWN} {report['new_changes']['count']} new change(s) since checkpoint "
-            "(current work, not drift)"
+            "(recorded evidence no longer describes the tree)"
         )
     add("")
 

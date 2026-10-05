@@ -3,10 +3,28 @@
 All notable changes to AgentCheckpoint are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versioning is SemVer.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-05
+
+### Fixed
+
+- **verify: new uncommitted changes now count as drift.** Editing a
+  previously-clean file after a clean-tree checkpoint (without committing)
+  left HEAD unchanged and the observed-file set empty, so recorded test
+  results stayed "valid" with high confidence. Drift now includes new dirty
+  paths: recorded tests are marked STALE and confidence drops (-10 new
+  changes, -15 staleness). Regression test added for the exact scenario.
+- **Rename parsing.** git emits `R100\0<old>\0<new>` — the collector had the
+  order reversed, hashing the deleted old path and never recording the live
+  new path. Fixed; covered by staged-rename and rename-plus-edit tests.
 
 ### Added
 
+- **Restored worktrees share the origin checkpoint store.** `restore
+  --worktree` writes an `.agentcheckpoint` pointer file into the new worktree;
+  `list / verify / resume / save / log` resolve the origin store through it
+  (like git worktrees sharing one object database). Saves made inside the
+  worktree record the worktree as repo root and branch the DAG from the
+  restored checkpoint. `agentck init` inside such a worktree is a no-op.
 - Five-language README (Chinese default, English, Japanese, Spanish, Russian)
   with a language switcher and a redesigned layout: centered header with
   badges and navigation, evidence-based "why" section, feature table,
@@ -17,6 +35,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning i
 
 ### Changed
 
+- Honest wording: SHA256 integrity manifests are **corruption detection**, not
+  cryptographic tamper-proofing (integrity.json cannot hash itself). Signed
+  checkpoints (Merkle root + Ed25519/SSH/Sigstore) added to the roadmap and
+  specified as the future strong guarantee.
 - Distribution renamed to **`agentck`** on PyPI (`agentcheckpoint` is taken
   there by an unrelated MCP server). The Python package still imports as
   `agentcheckpoint` and the CLI is still `agentck`.
@@ -54,8 +76,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning i
   execution recording, sha256 integrity manifest.
 - `agentck list` / `show` / `diff`: store inspection and manifest-level
   comparison.
-- `agentck verify`: drift detection, test-result staleness, tamper-evidence,
-  documented resume-confidence heuristic (exit 1 on drift).
+- `agentck verify`: drift detection, test-result staleness, integrity
+  verification, documented resume-confidence heuristic (exit 1 on drift).
 - `agentck resume [plain|claude|codex|glm]`: evidence-tagged handoff documents
   (`[OBSERVED]` / `[VERIFIED]` / `[AGENT-REPORTED]`) with live drift section.
 - `agentck restore`: worktree restore by default (never touches the current

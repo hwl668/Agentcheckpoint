@@ -11,12 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from agentcheckpoint import util
 from agentcheckpoint.checkpoint.create import save_checkpoint
 from agentcheckpoint.checkpoint.load import integrity_check
 from agentcheckpoint.errors import RestoreError
 from agentcheckpoint.git import patch as git_patch
 from agentcheckpoint.git import restore as git_restore
-from agentcheckpoint.schema import Manifest, SemanticData
+from agentcheckpoint.schema import SCHEMA_ID, Manifest, SemanticData
 
 
 @dataclass
@@ -110,10 +111,18 @@ def restore_checkpoint(
         if entry.get("sha256") and entry["path"] not in skip_paths
     )
 
+    if mode == "worktree":
+        _write_store_pointer(restore_root, store_path, root)
+
     notes = [
         "HEAD is detached at the checkpoint's commit; re-stage or branch as needed",
         "staged/unstaged split was reconstructed from patches; conflicts were not restorable",
     ]
+    if mode == "worktree":
+        notes.append(
+            "this worktree shares the origin repository's checkpoint store "
+            "(pointer file .agentcheckpoint)"
+        )
     if mode == "in_place":
         notes.append(
             f"safety checkpoint {safety_id} captured the state this restore replaced"
@@ -128,6 +137,29 @@ def restore_checkpoint(
         hash_checked=hash_checked,
         safety_checkpoint_id=safety_id,
         notes=notes,
+    )
+
+
+def _write_store_pointer(worktree_root: Path, store_path: Path, origin_root: Path) -> None:
+    """Link a restored worktree to the origin checkout's checkpoint store.
+
+    Like git worktrees sharing one object database, all linked worktrees share
+    one store: `agentck list/verify/resume/save` work inside the worktree, and
+    new saves branch the checkpoint DAG from the restored point.
+    """
+    util.write_text(
+        worktree_root / util.STORE_DIRNAME,
+        util.dump_json(
+            {
+                "schema": SCHEMA_ID,
+                "store": store_path.as_posix(),
+                "repo": origin_root.as_posix(),
+                "note": (
+                    "written by agentck restore: this linked worktree shares the "
+                    "origin repository's checkpoint store"
+                ),
+            }
+        ),
     )
 
 

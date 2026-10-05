@@ -34,7 +34,12 @@ def current_repo_root(manifest: Manifest, cwd: Path) -> Path | None:
     return None
 
 
-def verify_checkpoint(cp_dir: Path, manifest: Manifest, current_root: Path | None) -> dict:
+def verify_checkpoint(
+    cp_dir: Path,
+    manifest: Manifest,
+    current_root: Path | None,
+    linked_repo: Path | None = None,
+) -> dict:
     m = manifest.data
     repo = m.get("repo", {})
     observed = m.get("observed", {})
@@ -42,6 +47,7 @@ def verify_checkpoint(cp_dir: Path, manifest: Manifest, current_root: Path | Non
     tests = manifest.tests
 
     integrity = integrity_check(cp_dir)
+    new_paths: list[str] = []
 
     report: dict = {
         "id": manifest.id,
@@ -73,7 +79,15 @@ def verify_checkpoint(cp_dir: Path, manifest: Manifest, current_root: Path | Non
             "repository state could not be inspected from the current location"
         )
     else:
-        same_path = normalize_root(repo.get("root")) == normalize_root(current_root)
+        recorded_root = normalize_root(repo.get("root"))
+        current = normalize_root(current_root)
+        linked = normalize_root(linked_repo) if linked_repo else None
+        # A worktree created by `restore --worktree` counts as the same
+        # repository: it shares the origin's git object database *and* its
+        # checkpoint store via the pointer file.
+        same_path = recorded_root == current or (
+            linked is not None and recorded_root == linked
+        )
         report["repository"]["same_path"] = same_path
         if not same_path:
             report["repository"]["notes"].append(
@@ -81,6 +95,11 @@ def verify_checkpoint(cp_dir: Path, manifest: Manifest, current_root: Path | Non
                 "than the one recorded in this checkpoint"
             )
         else:
+            if linked is not None and recorded_root != current:
+                report["repository"]["notes"].append(
+                    "running in a linked worktree sharing the recorded "
+                    "repository's checkpoint store"
+                )
             snap = collector.collect(current_root)
             recorded_head = repo.get("head")
             head_same = snap.head == recorded_head
@@ -113,8 +132,10 @@ def verify_checkpoint(cp_dir: Path, manifest: Manifest, current_root: Path | Non
 
     drift = None
     if head_same is not None or file_rows:
-        drift = (head_same is False) or any(
-            row["verdict"] in ("changed", "missing") for row in file_rows
+        drift = (
+            head_same is False
+            or bool(new_paths)
+            or any(row["verdict"] in ("changed", "missing") for row in file_rows)
         )
     report["drift"] = drift
     report["files"] = file_rows
@@ -143,6 +164,7 @@ def verify_checkpoint(cp_dir: Path, manifest: Manifest, current_root: Path | Non
         head_exists=head_exists,
         branch_same=branch_same,
         file_rows=file_rows,
+        new_paths_count=len(new_paths),
         tests_present=bool(tests),
         drift=drift,
     )
@@ -165,6 +187,7 @@ def _confidence(
     head_exists: bool | None,
     branch_same: bool | None,
     file_rows: list[dict],
+    new_paths_count: int,
     tests_present: bool,
     drift: bool | None,
 ) -> tuple[int, list[str]]:
@@ -210,6 +233,12 @@ def _confidence(
         breakdown.append(f"    (+{len(untracked_bad) - 2} more untracked files affected)")
     score -= 10 * min(len(tracked_bad), 3)
     score -= 10 * min(len(untracked_bad), 2)
+
+    if new_paths_count:
+        score -= 10
+        breakdown.append(
+            f"-10 new uncommitted changes since checkpoint ({new_paths_count} file(s))"
+        )
 
     if drift and tests_present:
         score -= 15

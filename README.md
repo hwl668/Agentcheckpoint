@@ -67,7 +67,7 @@ Resume confidence: 75%
 |---|---|---|
 | 🔖 | **证据分层** | OBSERVED / VERIFIED / AGENT-REPORTED 全链路标注，agent 的声明永远不会被渲染成事实 |
 | 🕵 | **漂移检测** | HEAD 移动、分支变化、文件哈希变化 → 当时的测试结果标记 STALE |
-| 🔐 | **防篡改** | 每个产物记录 SHA256；verify / restore 全量重哈希，不匹配即拒绝 |
+| 🔐 | **完整性校验** | 每个产物记录 SHA256；verify / restore 全量重哈希，不匹配即拒绝——能发现意外损坏与未同步修改，不等于对蓄意攻击者的密码学防护 |
 | 🔁 | **执行重放** | 重跑 checkpoint 里记录的验证命令，判定 consistent / regression / improved |
 | 🌳 | **Checkpoint DAG** | `--parent` 从任意节点分叉，`log` 渲染树状历史 |
 | 🛟 | **安全恢复** | 默认开新 git worktree，绝不碰当前目录；in-place 需 `--yes` 且自动先存安全检查点 |
@@ -164,7 +164,7 @@ agentck restore cp_20261004_161741      # 恢复到全新 worktree，当前目�
 | `agentck log` | checkpoint DAG 树状图（分叉、断链可见） |
 | `agentck show [ref] [--json]` | 单个 checkpoint 详情 + handoff 文档 |
 | `agentck diff <a> <b>` | 两个 checkpoint 之间的差异 |
-| `agentck verify [ref] [--json]` | 漂移 / 过期 / 防篡改 / 置信度（exit 1 = 有漂移） |
+| `agentck verify [ref] [--json]` | 漂移 / 过期 / 完整性 / 置信度（exit 1 = 有漂移） |
 | `agentck replay [ref] [--json]` | 重放记录的验证命令并比对结果（exit 1 = 出现回归） |
 | `agentck resume [claude\|codex\|glm\|plain]` | 给下一个 agent 的证据标注型交接文档 |
 | `agentck restore <ref>` | 恢复状态（默认 worktree；`--in-place --yes` 覆写当前目录） |
@@ -182,7 +182,7 @@ agentck restore cp_20261004_161741      # 恢复到全新 worktree，当前目�
 .agentcheckpoint/checkpoints/cp_20261004_161741/
 ├── manifest.json        # 检查点本体（含 agent claims 与机器观测）
 ├── handoff.md           # save 时渲染的静态交接文档
-├── integrity.json       # 所有产物的 SHA256 —— 防篡改
+├── integrity.json       # 所有产物的 SHA256 —— 完整性校验
 ├── git/                 # OBSERVED：status.json、staged.patch、tracked.patch、untracked/
 ├── execution/           # OBSERVED：tests.json（命令、退出码、输出尾部）
 └── semantic/            # AGENT-REPORTED：decisions.md、constraints.md、next-steps.md
@@ -195,7 +195,9 @@ agentck restore cp_20261004_161741      # 恢复到全新 worktree，当前目�
 1. **git 事实永远由 git 命令采集**，绝不让 LLM 生成——幻觉污染不了底层状态。
 2. **claims 与观测分层存储**：goal / completed / decisions / blockers 只进
    `agent_claims`，永远带"未独立验证"标注。
-3. **checkpoint 只增不改**：verify 与 restore 都会全量重哈希，任何篡改都会被抓住。
+3. **checkpoint 只增不改**：verify 与 restore 都会全量重哈希，任何损坏或未同步的
+   修改都会被检测到。integrity.json 无法为自身哈希——抵御蓄意攻击者需要签名
+   checkpoint（见路线图）。
 
 置信度启发式的精确公式、DAG 与 replay 语义，见
 [协议规范（英文）](spec/agent-checkpoint-v1.md)。
@@ -217,6 +219,7 @@ agentck restore cp_20261004_161741      # 恢复到全新 worktree，当前目�
 - [ ] Claude Code hooks 自动 checkpoint（会话结束/危险操作前自动 save）
 - [ ] 各 agent 平台的 Skill 分发包
 - [ ] Checkpoint 质量评分
+- [ ] 签名 checkpoint（Merkle 根哈希 + Ed25519/SSH/Sigstore）
 
 ## 🤖 Agent 集成
 

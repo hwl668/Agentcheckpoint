@@ -20,6 +20,42 @@ def test_verify_no_drift_exit_0(run_ck, git_repo):
     assert "no drift since checkpoint" in out
 
 
+def test_verify_detects_new_dirty_path_after_checkpoint(run_ck, git_repo):
+    """User-reported regression: checkpoint on a CLEAN tree, then edit a
+    previously-clean tracked file without committing. HEAD is unchanged and
+    the checkpoint observed no files, but the recorded test evidence no
+    longer describes the tree — this must be drift + STALE."""
+    run_ck("init")
+    run_ck("save", "clean", "--test", "git rev-parse --verify HEAD")
+    git_repo.write("src/util.py", "edited after the checkpoint\n")
+
+    code, out, _ = run_ck("verify")
+    assert code == 1
+    assert "1 new change(s) since checkpoint" in out
+    assert "STALE" in out
+    assert "-10 new uncommitted changes since checkpoint (1 file(s))" in out
+    assert "-15 recorded test results are stale" in out
+    assert "Resume confidence: 75%" in out
+
+
+def test_verify_detects_new_untracked_file_after_checkpoint(run_ck, git_repo):
+    run_ck("init")
+    run_ck("save", "clean")
+    git_repo.write("brand-new.txt", "untracked now\n")
+    code, out, _ = run_ck("verify")
+    assert code == 1
+    assert "1 new change(s) since checkpoint" in out
+
+
+def test_verify_clean_stays_clean_after_checkpoint(run_ck, git_repo):
+    """Nothing changed after a clean-tree checkpoint: no drift, full confidence."""
+    run_ck("init")
+    run_ck("save", "clean", "--test", "git rev-parse --verify HEAD")
+    code, out, _ = run_ck("verify")
+    assert code == 0
+    assert "Resume confidence: 100%" in out
+
+
 def test_verify_detects_file_drift_and_stale_tests(run_ck, git_repo):
     run_ck("init")
     git_repo.write("src/util.py", "original\n")

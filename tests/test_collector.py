@@ -58,6 +58,38 @@ def test_collect_unborn_repo(tmp_path, env):
     assert snap.untracked == []
 
 
+def test_collect_rename_staged_records_new_path(git_repo):
+    """Regression: git emits R entries as ORIGINAL path first, NEW path second
+    (R100\\0a.txt\\0b.txt). The live (new) path must be the primary one."""
+    git_repo.write("a.txt", "rename me\n")
+    git_repo.commit_all("add a")
+    git_repo.git("mv", "a.txt", "b.txt")
+
+    snap = collector.collect(git_repo.root)
+    assert [(c.path, c.code, c.orig_path) for c in snap.staged] == [
+        ("b.txt", "R100", "a.txt")
+    ]
+    by_path = {f["path"]: f for f in snap.files}
+    assert "b.txt" in by_path and "a.txt" not in by_path
+    assert by_path["b.txt"]["sha256"] is not None
+
+
+def test_collect_rename_with_further_edit(git_repo):
+    git_repo.write("a.txt", "rename me\n")
+    git_repo.commit_all("add a")
+    git_repo.git("mv", "a.txt", "b.txt")
+    git_repo.write("b.txt", "rename me\nplus an unstaged edit\n")
+
+    snap = collector.collect(git_repo.root)
+    assert [(c.path, c.code, c.orig_path) for c in snap.staged] == [
+        ("b.txt", "R100", "a.txt")
+    ]
+    assert [c.path for c in snap.unstaged] == ["b.txt"]
+    by_path = {f["path"]: f for f in snap.files}
+    assert set(by_path) == {"b.txt"}
+    assert set(by_path["b.txt"]["states"]) == {"staged", "unstaged"}
+
+
 def test_collect_detects_binary_changes(git_repo):
     git_repo.write_bytes("blob.bin", b"\x00\x01\x02original")
     git_repo.commit_all("add binary")

@@ -71,7 +71,7 @@ Códigos de salida scriptables: `0` sin deriva · `1` deriva · `2` error.
 |---|---|---|
 | 🔖 | **Clases de evidencia** | OBSERVED / VERIFIED / AGENT-REPORTED etiquetadas de extremo a extremo; las declaraciones nunca se presentan como hechos |
 | 🕵 | **Detección de deriva** | HEAD movido, rama cambiada, hashes distintos → resultados de pruebas marcados STALE |
-| 🔐 | **A prueba de manipulación** | Cada artefacto con SHA256; verify / restore re-hashean todo y rechazan cualquier discrepancia |
+| 🔐 | **Verificación de integridad** | Cada artefacto con SHA256; verify / restore re-hashean todo y rechazan cualquier discrepancia — detecta corrupción y ediciones ajenas, no necesariamente a un atacante decidido |
 | 🔁 | **Replay de ejecución** | Reejecuta los comandos grabados en un checkpoint: consistent / regression / improved |
 | 🌳 | **Checkpoint DAG** | Bifurca desde cualquier nodo con `--parent`; `log` dibuja el árbol |
 | 🛟 | **Restauración segura** | Crea un git worktree nuevo por defecto, nunca toca tu árbol; in-place exige `--yes` y siempre guarda antes un checkpoint de seguridad |
@@ -190,7 +190,7 @@ Cada checkpoint es un directorio legible por humanos (esquema
 .agentcheckpoint/checkpoints/cp_20261004_161741/
 ├── manifest.json        # el checkpoint (declaraciones del agente + observaciones de máquina)
 ├── handoff.md           # handoff estático renderizado al guardar
-├── integrity.json       # SHA256 de cada artefacto — a prueba de manipulación
+├── integrity.json       # SHA256 de cada artefacto — verificación de integridad
 ├── git/                 # OBSERVED: status.json, staged.patch, tracked.patch, untracked/
 ├── execution/           # OBSERVED: tests.json (comandos, códigos de salida, colas)
 └── semantic/            # AGENT-REPORTED: decisions.md, constraints.md, next-steps.md
@@ -206,7 +206,9 @@ Tres reglas duras:
    completed / decisions / blockers solo van a `agent_claims`, siempre
    etiquetadas "no verificado de forma independiente".
 3. **Los checkpoints son de solo anexado**: verify y restore re-hashean todo;
-   cualquier manipulación se detecta.
+   cualquier corrupción o modificación no anticipada se detecta. integrity.json
+   no puede hashearse a sí mismo — resistir a un atacante decidido requiere
+   checkpoints firmados (ver hoja de ruta).
 
 La fórmula exacta de la heurística de confianza y la semántica de DAG y
 replay están en la [especificación del protocolo (inglés)](spec/agent-checkpoint-v1.md).
@@ -232,6 +234,7 @@ replay están en la [especificación del protocolo (inglés)](spec/agent-checkpo
 - [ ] Hooks de Claude Code para checkpoints automáticos (fin de sesión / antes de acciones riesgosas)
 - [ ] Paquetes de Skill distribuibles por plataforma de agente
 - [ ] Puntuación de calidad del checkpoint
+- [ ] Checkpoints firmados (raíz Merkle + Ed25519/SSH/Sigstore)
 
 ## 🤖 Integración con agentes
 

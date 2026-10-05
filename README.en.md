@@ -70,7 +70,7 @@ Exit codes are scriptable: `0` no drift · `1` drift · `2` error.
 |---|---|---|
 | 🔖 | **Evidence classes** | OBSERVED / VERIFIED / AGENT-REPORTED tagged end-to-end; claims are never rendered as facts |
 | 🕵 | **Drift detection** | HEAD moved, branch changed, file hashes differ → recorded test results marked STALE |
-| 🔐 | **Tamper-evident** | Every artifact hashed (SHA256); verify / restore re-hash everything and refuse on mismatch |
+| 🔐 | **Integrity verification** | Every artifact hashed (SHA256); verify / restore re-hash everything and refuse on mismatch — detects corruption and out-of-band edits, not a determined attacker |
 | 🔁 | **Execution replay** | Re-run commands recorded in a checkpoint: consistent / regression / improved |
 | 🌳 | **Checkpoint DAG** | Fork from any node with `--parent`; `log` renders the tree |
 | 🛟 | **Safe restore** | Creates a fresh git worktree by default, never touches your tree; in-place needs `--yes` and always saves a safety checkpoint first |
@@ -188,7 +188,7 @@ Each checkpoint is a human-readable directory (schema
 .agentcheckpoint/checkpoints/cp_20261004_161741/
 ├── manifest.json        # the checkpoint (agent claims + machine observations)
 ├── handoff.md           # static handoff rendered at save time
-├── integrity.json       # SHA256 of every artifact — tamper-evident
+├── integrity.json       # SHA256 of every artifact — integrity-checked
 ├── git/                 # OBSERVED: status.json, staged.patch, tracked.patch, untracked/
 ├── execution/           # OBSERVED: tests.json (commands, exit codes, tails)
 └── semantic/            # AGENT-REPORTED: decisions.md, constraints.md, next-steps.md
@@ -204,7 +204,9 @@ Three hard rules:
    decisions / blockers only go into `agent_claims`, always labelled
    "not independently verified".
 3. **Checkpoints are append-only**: verify and restore re-hash everything;
-   any tampering is caught.
+   any corruption or out-of-band modification is detected. integrity.json
+   cannot hash itself — resisting a determined attacker requires signed
+   checkpoints (see roadmap).
 
 The exact confidence heuristic, DAG and replay semantics are specified in
 the [protocol spec (English)](spec/agent-checkpoint-v1.md).
@@ -230,6 +232,7 @@ the [protocol spec (English)](spec/agent-checkpoint-v1.md).
 - [ ] Claude Code hooks for automatic checkpoints (session end / before risky actions)
 - [ ] Distributable Skill packages per agent platform
 - [ ] Checkpoint quality score
+- [ ] Signed checkpoints (Merkle root + Ed25519/SSH/Sigstore)
 
 ## 🤖 Agent integration
 

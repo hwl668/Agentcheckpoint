@@ -94,6 +94,51 @@ def test_restore_in_place_creates_safety_checkpoint(run_ck, git_repo):
     assert "pre-restore-" in out
 
 
+def test_restored_worktree_shares_the_store(run_ck, git_repo, tmp_path):
+    """restore --worktree writes a pointer file; from inside the new worktree
+    list/verify/save all work against the origin store (like git worktrees
+    sharing one object database)."""
+    run_ck("init")
+    _build_rich_state(git_repo)
+    code, out, _ = run_ck("save", "shared", "--goal", "shared store",
+                          "--test", "git rev-parse --verify HEAD")
+    assert code == 0
+    ref = out.split("Checkpoint saved: ")[1].split()[0]
+    git_repo.commit_all("drift commit")
+
+    code, out, _ = run_ck("restore", ref)
+    assert code == 0
+    assert "shares the origin repository's checkpoint store" in out
+    worktree = tmp_path / f"repo-agentck-{ref}"
+    pointer = worktree / ".agentcheckpoint"
+    assert pointer.is_file()
+    assert "store" in pointer.read_text(encoding="utf-8")
+
+    # list / verify / log all resolve the origin store from inside the worktree
+    code, out, _ = run_ck("list", cwd=worktree)
+    assert code == 0 and ref in out
+    code, out, _ = run_ck("verify", ref, cwd=worktree)
+    assert code == 0
+    assert "same repository" in out
+    assert "linked worktree" in out
+    assert "Resume confidence: 90%" in out  # only the detached-branch penalty
+
+    # saving inside the worktree records the worktree as repo root and
+    # branches the DAG from the restored checkpoint
+    code, out, _ = run_ck("save", "in-worktree", cwd=worktree)
+    assert code == 0
+    from agentcheckpoint import store as store_mod
+    from agentcheckpoint.checkpoint.load import load_manifest
+
+    origin_store = git_repo.root / ".agentcheckpoint"
+    manifest = load_manifest(store_mod.latest_checkpoint(origin_store))
+    assert manifest.label == "in-worktree"
+    assert manifest.parent == ref
+    assert manifest.repo_root == worktree.as_posix()
+    # the pointer file itself must never leak into observed state
+    assert ".agentcheckpoint" not in manifest.data["observed"]["untracked_files"]
+
+
 def test_restore_refuses_tampered_checkpoint(run_ck, git_repo):
     run_ck("init")
     _build_rich_state(git_repo)

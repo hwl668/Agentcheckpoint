@@ -55,17 +55,55 @@ def load_config(store: Path) -> dict:
     }
 
 
-def find_store(cwd: Path) -> tuple[Path, Path] | None:
-    """Walk up from cwd looking for an initialized store; return (repo_root, store)."""
+def _read_pointer_file(entry: Path) -> tuple[Path, Path | None] | None:
+    """Parse a `.agentcheckpoint` pointer file written by `restore --worktree`.
+
+    Returns (store_target, origin_repo_or_None); None if unreadable or malformed.
+    """
+    try:
+        text = entry.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    try:
+        data = json.loads(text) if text.startswith("{") else {"store": text}
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw_store = data.get("store")
+    if not isinstance(raw_store, str) or not raw_store:
+        return None
+
+    def _resolve(raw: str) -> Path:
+        path = Path(raw)
+        return (entry.parent / path).resolve() if not path.is_absolute() else path.resolve()
+
+    store_target = _resolve(raw_store)
+    raw_repo = data.get("repo")
+    origin = _resolve(raw_repo) if isinstance(raw_repo, str) and raw_repo else None
+    return store_target, origin
+
+
+def find_store(cwd: Path) -> tuple[Path, Path, Path | None] | None:
+    """Walk up from cwd looking for an initialized store.
+
+    Returns (repo_root, store, linked_repo). ``linked_repo`` is the origin
+    repository when cwd is a worktree whose `.agentcheckpoint` is a pointer
+    file sharing another checkout's store (written by `restore --worktree`).
+    """
     for candidate in [cwd, *cwd.parents]:
-        store = candidate / STORE_DIRNAME
-        if store.is_dir() and (store / CONFIG_NAME).is_file():
-            return candidate.resolve(), store
+        entry = candidate / STORE_DIRNAME
+        if entry.is_dir() and (entry / CONFIG_NAME).is_file():
+            return candidate.resolve(), entry.resolve(), None
+        if entry.is_file():
+            pointer = _read_pointer_file(entry)
+            if pointer is not None and (pointer[0] / CONFIG_NAME).is_file():
+                return candidate.resolve(), pointer[0], pointer[1]
     return None
 
 
-def open_store(cwd: Path) -> tuple[Path, Path]:
-    """Return (repo_root, store) for the current location or raise a clear error."""
+def open_store(cwd: Path) -> tuple[Path, Path, Path | None]:
+    """Return (repo_root, store, linked_repo) for the current location or raise."""
     found = find_store(cwd)
     if found is not None:
         return found

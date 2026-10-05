@@ -98,8 +98,11 @@ def _parse_name_status_z(raw: bytes) -> list[PathChange]:
         path = tokens[i]
         i += 1
         orig: str | None = None
+        # Verified empirically: git emits R/C entries as status, ORIGINAL path,
+        # NEW path (`git mv a.txt b.txt` -> R100\0a.txt\0b.txt). The live path
+        # is the new one — it is the one that must be hashed.
         if code[0] in "RC" and len(code) > 1 and i < len(tokens):
-            orig = tokens[i]
+            orig, path = path, tokens[i]
             i += 1
         changes.append(PathChange(path=path, code=code, orig_path=orig))
     return changes

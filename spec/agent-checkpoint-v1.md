@@ -152,25 +152,39 @@ Everything else is stored verbatim as AGENT-REPORTED.
 Merge rules when both a semantic file and flags are given: file lists first,
 flag lists appended; flag scalars win.
 
-## 5. Integrity
+## 5. Integrity (corruption detection)
 
 `integrity.json` maps every other artifact (relative posix path →
 `{sha256, bytes}`), excluding itself. `verify` and `restore` re-hash
 everything and refuse to proceed on mismatch. Extra files inside a checkpoint
 directory are also reported (`unrecorded artifact`).
 
+Honest scope: `integrity.json` cannot hash itself, so this is **corruption
+detection, not cryptographic tamper-proofing**. It reliably catches accidental
+damage and out-of-band edits that forget the manifest; a determined attacker
+who rewrites `integrity.json` as well will pass. Strong guarantees require
+signed checkpoints — a Merkle root over the artifact hashes, signed with
+Ed25519/SSH/Sigstore — which is a planned feature, not a v1 one.
+
 ## 6. Drift and staleness
 
 Given a checkpoint `C` and the current repository `R`:
 
 - **file drift** — an observed file of `C` is missing in `R`, or its sha256
-  differs. (Clean-tree checkpoints observe nothing; HEAD movement still counts.)
+  differs.
 - **HEAD drift** — `R`'s HEAD differs from `C.repo.head`.
+- **new-change drift** — dirty paths exist in `R` (tracked modifications or
+  untracked files) that were not observed at checkpoint time. The recorded
+  evidence no longer describes the tree, so this counts as drift even when
+  the checkpoint was taken on a clean tree and HEAD did not move.
 - **stale test result** — a recorded test exists and any drift was detected.
   The engine does not re-run commands during `verify`; a recorded PASS that
   has gone stale is reported as STALE, not as passing or failing.
-- **new changes** — current dirty paths not observed at checkpoint time.
-  These are the next agent's work-in-progress, not drift.
+- **new changes** (report field) — the new dirty paths themselves, listed so
+  the next agent can tell leftover work from recorded state.
+- A branch change with an identical tree and HEAD is **not** drift: evidence
+  describes content, not branch names. Branch changes still appear in the
+  confidence breakdown.
 
 Drift is `null` (unknown) when the repository cannot be inspected.
 
@@ -185,6 +199,7 @@ start 100
 -10  branch changed
 -10  per changed/missing tracked observed file (cap -30)
 -10  per changed/missing untracked observed file (cap -20)
+-10  new uncommitted changes since checkpoint (counted once, any number of paths)
 -15  recorded test results are stale (only when drift occurred)
 -10  no tests were recorded at checkpoint
 floor 0, cap 100

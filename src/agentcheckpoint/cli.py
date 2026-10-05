@@ -176,6 +176,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def cmd_init(args: argparse.Namespace) -> int:
     root = repo_root(Path.cwd())
+    entry = root / util.STORE_DIRNAME
+    if entry.is_file():
+        # a pointer file written by `restore --worktree`: this worktree already
+        # shares the origin repository's store
+        print("This worktree already shares a checkpoint store via a pointer file.")
+        print("Nothing to do — `agentck list` works here.")
+        return 0
     store, created, exclude_added = init_store(root)
     if created:
         print(f"Initialized AgentCheckpoint store: {store}")
@@ -192,7 +199,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_save(args: argparse.Namespace) -> int:
-    root, store = open_store(Path.cwd())
+    root, store, _linked = open_store(Path.cwd())
     config = load_config(store)
 
     flags = SemanticData(
@@ -260,7 +267,7 @@ def _load_semantic_file(path: Path) -> SemanticData:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    _, store = open_store(Path.cwd())
+    _, store, _linked = open_store(Path.cwd())
     manifests = list_checkpoints(store)
     if args.limit is not None and args.limit >= 0:
         manifests = manifests[-args.limit:] if args.limit else []
@@ -294,7 +301,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    _, store = open_store(Path.cwd())
+    _, store, _linked = open_store(Path.cwd())
     cp_dir = resolve_ref(store, args.ref)
     manifest = load_manifest(cp_dir)
     if args.json:
@@ -319,7 +326,7 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def cmd_diff(args: argparse.Namespace) -> int:
-    _, store = open_store(Path.cwd())
+    _, store, _linked = open_store(Path.cwd())
     manifest_a = load_manifest(resolve_ref(store, args.ref_a))
     manifest_b = load_manifest(resolve_ref(store, args.ref_b))
     print(diff_document(diff_checkpoints(manifest_a, manifest_b)))
@@ -327,7 +334,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
-    root, store = open_store(Path.cwd())
+    root, store, _linked = open_store(Path.cwd())
     cp_dir = resolve_ref(store, args.ref)
     manifest = load_manifest(cp_dir)
     if not manifest.tests:
@@ -345,16 +352,18 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
 
 def cmd_log(args: argparse.Namespace) -> int:
-    _, store = open_store(Path.cwd())
+    _, store, _linked = open_store(Path.cwd())
     print(graph_document(list_checkpoints(store)), end="")
     return 0
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    _, store = open_store(Path.cwd())
+    _, store, linked = open_store(Path.cwd())
     cp_dir = resolve_ref(store, args.ref)
     manifest = load_manifest(cp_dir)
-    report = verify_checkpoint(cp_dir, manifest, current_repo_root(manifest, Path.cwd()))
+    report = verify_checkpoint(
+        cp_dir, manifest, current_repo_root(manifest, Path.cwd()), linked_repo=linked
+    )
     if args.json:
         print(util.dump_json(report))
     else:
@@ -365,7 +374,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def cmd_resume(args: argparse.Namespace) -> int:
-    _, store = open_store(Path.cwd())
+    _, store, linked = open_store(Path.cwd())
     ref = args.checkpoint or "latest"
     target = args.target
     if args.pos:
@@ -377,7 +386,9 @@ def cmd_resume(args: argparse.Namespace) -> int:
 
     cp_dir = resolve_ref(store, ref)
     manifest = load_manifest(cp_dir)
-    report = verify_checkpoint(cp_dir, manifest, current_repo_root(manifest, Path.cwd()))
+    report = verify_checkpoint(
+        cp_dir, manifest, current_repo_root(manifest, Path.cwd()), linked_repo=linked
+    )
     document = handoff_document(manifest.data, report=report, target=target)
     if args.output:
         output = Path(args.output)
@@ -390,7 +401,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
 
 
 def cmd_restore(args: argparse.Namespace) -> int:
-    root, store = open_store(Path.cwd())
+    root, store, _linked = open_store(Path.cwd())
     if args.in_place and not args.yes:
         print(
             "error: in-place restore rewrites your current working tree.\n"

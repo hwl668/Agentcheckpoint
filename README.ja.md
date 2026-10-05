@@ -69,7 +69,7 @@ Resume confidence: 75%
 |---|---|---|
 | 🔖 | **証拠クラス** | OBSERVED / VERIFIED / AGENT-REPORTED を一貫してタグ付け。主張が事実として表示されることはありません |
 | 🕵 | **drift 検出** | HEAD 移動・ブランチ変更・ファイルハッシュ差分 → 記録済みテスト結果を STALE に |
-| 🔐 | **改ざん検知** | 全アーティファクトの SHA256 を記録。verify / restore は再ハッシュし、不一致なら拒否 |
+| 🔐 | **整合性検証** | 全アーティファクトの SHA256 を記録。verify / restore は再ハッシュし、不一致なら拒否——破損や想定外の変更は検出しますが、意図的な攻撃者への耐性は別問題です |
 | 🔁 | **実行リプレイ** | checkpoint に記録したコマンドを再実行し consistent / regression / improved を判定 |
 | 🌳 | **Checkpoint DAG** | `--parent` で任意ノードから分岐、`log` でツリー表示 |
 | 🛟 | **安全な復元** | デフォルトは新規 git worktree。現在のツリーには一切触れず、in-place は `--yes` 必須＋ safety checkpoint 自動作成 |
@@ -168,7 +168,7 @@ agentck restore cp_20261004_161741      # 新規 worktree へ復元。現在の�
 | `agentck log` | checkpoint DAG のツリー表示（分岐・断絶が見える） |
 | `agentck show [ref] [--json]` | checkpoint の詳細 + handoff ドキュメント |
 | `agentck diff <a> <b>` | 2 つの checkpoint の差分 |
-| `agentck verify [ref] [--json]` | drift / 期限切れ / 改ざん / 信頼度（exit 1 = drift あり） |
+| `agentck verify [ref] [--json]` | drift / 期限切れ / 整合性 / 信頼度（exit 1 = drift あり） |
 | `agentck replay [ref] [--json]` | 記録済みコマンドを再実行して比較（exit 1 = リグレッション） |
 | `agentck resume [claude\|codex\|glm\|plain]` | 次のエージェントへの証拠タグ付き引き継ぎドキュメント |
 | `agentck restore <ref>` | 状態を復元（デフォルト worktree。`--in-place --yes` で現ツリーを書き換え） |
@@ -186,7 +186,7 @@ agentck restore cp_20261004_161741      # 新規 worktree へ復元。現在の�
 .agentcheckpoint/checkpoints/cp_20261004_161741/
 ├── manifest.json        # checkpoint 本体（agent claims + 機械観測）
 ├── handoff.md           # save 時にレンダリングされた静的ハンドオフ
-├── integrity.json       # 全アーティファクトの SHA256 —— 改ざん検知
+├── integrity.json       # 全アーティファクトの SHA256 —— 整合性検証
 ├── git/                 # OBSERVED: status.json, staged.patch, tracked.patch, untracked/
 ├── execution/           # OBSERVED: tests.json（コマンド・終了コード・出力末尾）
 └── semantic/            # AGENT-REPORTED: decisions.md, constraints.md, next-steps.md
@@ -201,7 +201,8 @@ agentck restore cp_20261004_161741      # 新規 worktree へ復元。現在の�
 2. **主張と観測は別々に保存**：goal / completed / decisions / blockers は
    `agent_claims` のみに入り、常に「未検証」ラベル付き。
 3. **checkpoint は追記専用**：verify と restore は全体を再ハッシュし、
-   改ざんは必ず検出されます。
+   破損や想定外の変更は検出されます。integrity.json は自身をハッシュできません——
+   意図的な攻撃者に耐えるには署名付き checkpoint が必要です（ロードマップ参照）。
 
 信頼度ヒューリスティックの正確な数式、DAG とリプレイのセマンティクスは
 [プロトコル仕様（英語）](spec/agent-checkpoint-v1.md)を参照。
@@ -225,6 +226,7 @@ agentck restore cp_20261004_161741      # 新規 worktree へ復元。現在の�
 - [ ] Claude Code hooks による自動 checkpoint（セッション終了時・危険操作前）
 - [ ] エージェントプラットフォーム別 Skill パッケージ
 - [ ] checkpoint 品質スコア
+- [ ] 署名付き checkpoint（Merkle ルート + Ed25519/SSH/Sigstore）
 
 ## 🤖 エージェント統合
 
