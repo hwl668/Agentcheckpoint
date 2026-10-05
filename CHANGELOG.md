@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/); versioning i
 
 ### Added
 
+- Five-language README (Chinese default, English, Japanese, Spanish, Russian)
+  with a language switcher and a redesigned layout: centered header with
+  badges and navigation, evidence-based "why" section, feature table,
+  collapsible install options.
 - CI workflow (ruff + pytest across Linux/macOS/Windows, Python 3.10–3.13) and
   a PyPI release workflow (Trusted Publishing, triggered by `v*` tags).
 - Animated demo GIF rendered from real `agentck` output (`docs/demo.gif`).
